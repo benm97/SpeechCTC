@@ -1,6 +1,6 @@
-import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
 
 class SpeechRecognitionModel(nn.Module):
     def __init__(self, input_dim, output_dim, activation='leaky_relu', dropout=0.2):
@@ -22,11 +22,11 @@ class SpeechRecognitionModel(nn.Module):
 
         self.rnn2 = nn.LSTM(256, 128, bidirectional=True, batch_first=True, dropout=dropout)
 
-        self.rnn3 = nn.LSTM(256, 128, bidirectional=True, batch_first=True, dropout=dropout)
-
-        self.rnn4 = nn.LSTM(256, 128, bidirectional=True, batch_first=True, dropout=dropout)
-
-        self.rnn5 = nn.LSTM(256, 128, bidirectional=True, batch_first=True)
+        # self.rnn3 = nn.LSTM(256, 128, bidirectional=True, batch_first=True, dropout=dropout)
+        #
+        # self.rnn4 = nn.LSTM(256, 128, bidirectional=True, batch_first=True, dropout=dropout)
+        #
+        # self.rnn5 = nn.LSTM(256, 128, bidirectional=True, batch_first=True)
 
         # Dense layer
         self.fc1 = nn.Linear(256, 256)
@@ -57,11 +57,11 @@ class SpeechRecognitionModel(nn.Module):
 
         x, _ = self.rnn2(x)
 
-        x, _ = self.rnn3(x)
-
-        x, _ = self.rnn4(x)
-
-        x, _ = self.rnn5(x)
+        # x, _ = self.rnn3(x)
+        #
+        # x, _ = self.rnn4(x)
+        #
+        # x, _ = self.rnn5(x)
 
         # Dense layer
         x = self.fc1(x)

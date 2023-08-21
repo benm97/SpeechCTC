@@ -39,15 +39,8 @@ class AudioDataset(Dataset):
 
         # transform label to vector
         label_sequence = np.zeros(SEQUENCE_LENGTH_MAX)
-        words = label.split(" ")
-        i = 0
-        for word in words:
-            for character in word:
-                label_sequence[i] = self.vocabulary[character.lower()]
-                i += 1
-            label_sequence[i] = self.vocabulary[" "]
-            i += 1
-        label_sequence[i] = self.vocabulary["<eos>"]
+        for i, char_ in enumerate(label):
+            label_sequence[i] = self.vocabulary[char_.lower()]
 
         # Load and process the data from the file
         data, length = self.load_data(file_path)
@@ -57,8 +50,17 @@ class AudioDataset(Dataset):
     def load_data(self, file_path):
         data, sr = librosa.load(file_path)
 
+        noise_factor = 0.003
         # data augmentation adding noise
-        # data = data + np.random.normal(0, 1, len(data))
+        data = data + noise_factor * np.random.normal(0, 1, len(data))
+
+        # shifting audio
+        shift = np.random.randint(0, 100)
+        data = np.roll(data, shift)
+
+        # changing pitch
+        pitch_change = np.random.randint(-5, 5)
+        data = librosa.effects.pitch_shift(data, sr=sr, n_steps=pitch_change)
 
         if self.transform:
             data = self.transform(data)
@@ -82,21 +84,21 @@ def load_data_to_dataloader(data_type="train", batch_size=32, transform=extract_
 if __name__ == '__main__':
     train_dataloader = load_data_to_dataloader(data_type="train", batch_size=32,
                                                transform=extract_mfccs)
-    validation_dataloader = load_data_to_dataloader(data_type="train", batch_size=32,
+    validation_dataloader = load_data_to_dataloader(data_type="val", batch_size=32,
                                                     transform=extract_mfccs)
 
     # # Define hyperparameters and training params
     input_size = N_MFCC  # Example: MFCC feature size
     hidden_size = 64
     output_size = len(LAS_VOCAB)  # vocab size
-    learning_rate = 0.005
+    learning_rate = 0.0005
     num_epochs = 200
 
-    # Initialize the LAS model
+    # Initialize the model
     model = SpeechRecognitionModel((300, 39), output_size)
 
-    # load existing model
-    # model_path = 'model_epoch_49.pth'
+    # # # load existing model
+    # model_path = 'model_epoch_23.pth'
     # checkpoint = torch.load(model_path)
     # model.load_state_dict(checkpoint)
 
@@ -117,11 +119,10 @@ if __name__ == '__main__':
             # Forward pass through the model
             outputs = model(encoder_inputs.float())
 
-            labels = labels_sequence
             outputs_reshape = inverted_tensor = torch.transpose(outputs, 0, 1)
 
-            loss = criterion(outputs_reshape.float(), labels, torch.ones(labels.shape[0],
-                                                                         dtype=torch.long) *290,
+            loss = criterion(outputs_reshape.float(), labels_sequence, torch.ones(
+                labels_sequence.shape[0], dtype=torch.long) * 290,
                              torch.tensor(lengths, dtype=torch.long))
             loss.backward()
             optimizer.step()
@@ -150,11 +151,10 @@ if __name__ == '__main__':
             for encoder_inputs, labels_sequence, lengths in \
                     validation_dataloader:
                 val_outputs = model(encoder_inputs.float())
-                labels = labels_sequence
                 outputs_reshape = inverted_tensor = torch.transpose(val_outputs, 0, 1)
 
-                val_loss = criterion(outputs_reshape.float(), labels,
-                                 torch.ones(labels.shape[0],
+                val_loss = criterion(outputs_reshape.float(), labels_sequence,
+                                 torch.ones(labels_sequence.shape[0],
                                             dtype=torch.long) * 290,
                                  torch.tensor(lengths, dtype=torch.long))
                 total_val_loss += val_loss.item()
@@ -169,7 +169,7 @@ if __name__ == '__main__':
                 # print(f"wer: {wer(ground_truth, hypothesis)}")
 
             avg_val_loss = total_val_loss / len(validation_dataloader)
-            avg_val_wer = total_val_wer / len(train_dataloader)
+            avg_val_wer = total_val_wer / len(validation_dataloader)
 
         print(
             f"Epoch [{epoch + 1}/{num_epochs}], Train Loss: {avg_train_loss:.4f}, "
@@ -180,3 +180,45 @@ if __name__ == '__main__':
         if avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
             torch.save(model.state_dict(), f"model_epoch_{epoch + 1}.pth")
+
+
+    # # test model
+    # model_path = 'model_epoch_23.pth'
+    # model = SpeechRecognitionModel((300, 39), output_size)
+    #
+    # checkpoint = torch.load(model_path)
+    # model.load_state_dict(checkpoint)
+    # model.eval()
+    #
+    # # load test data
+    # test_paths = load_data(data_type="test")
+    # test_set = AudioDataset(test_paths, transform=extract_mfccs)
+    # test_dataloader = DataLoader(test_set, batch_size=len(test_set), shuffle=True)
+    #
+    # with torch.no_grad():
+    #     total_test_loss = 0
+    #     total_test_wer = 0
+    #     for encoder_inputs, labels_sequence, lengths in \
+    #             test_dataloader:
+    #         test_outputs = model(encoder_inputs.float())
+    #         outputs_reshape = inverted_tensor = torch.transpose(test_outputs, 0, 1)
+    #
+    #         test_loss = criterion(outputs_reshape.float(), labels_sequence,
+    #                          torch.ones(labels_sequence.shape[0],
+    #                                     dtype=torch.long) * 290,
+    #                          torch.tensor(lengths, dtype=torch.long))
+    #         total_test_loss += test_loss.item()
+    #
+    #         outputs_words = np.argmax(test_outputs.detach().numpy(), axis=2)
+    #         ground_truth = sequence_to_sentence(labels_sequence)
+    #         hypothesis = sequence_to_sentence(outputs_words)
+    #         total_test_wer += wer(ground_truth, hypothesis)
+    #         print(f"Val Loss: {test_loss}")
+    #         print(f"Ground Truth: {ground_truth}")
+    #         print(f"Hypothesis: {hypothesis}")
+    #         print(f"wer: {wer(ground_truth, hypothesis)}")
+    #
+    #     avg_test_loss = total_test_loss / len(test_dataloader)
+    #     avg_test_wer = total_test_wer / len(test_dataloader)
+
+
